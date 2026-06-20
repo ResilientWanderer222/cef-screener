@@ -85,19 +85,27 @@ def fetch_n2_ciks() -> dict[str, str]:
                 _debug_printed = True
 
             for hit in hits:
-                src  = hit.get("_source", {})
-                name = src.get("entity_name", "")
+                src = hit.get("_source", {})
 
-                # Try _source fields first, then parse accession number
+                # CIK: _source.ciks is a list e.g. ["0001213900"]
+                # Fallback: _id = "0001213900-25-126539:doc.htm" → split ":" → split "-" → [0]
                 cik = ""
-                for field in ("entity_id", "cik", "ciks"):
-                    val = src.get(field)
-                    if val:
-                        cik = str(val[0] if isinstance(val, list) else val).lstrip("0")
-                        break
+                raw_ciks = src.get("ciks", [])
+                if raw_ciks:
+                    cik = str(raw_ciks[0]).lstrip("0")
                 if not cik:
-                    raw_id = hit.get("_id", "")
-                    cik = raw_id.split("-")[0].lstrip("0")
+                    raw_id   = hit.get("_id", "")
+                    accession = raw_id.split(":")[0]          # "0001213900-25-126539"
+                    cik = accession.split("-")[0].lstrip("0") # "1213900"
+
+                # Name: _source.display_names is a list of dicts or strings
+                name = ""
+                display_names = src.get("display_names", [])
+                if display_names:
+                    first = display_names[0]
+                    name = first.get("name", "") if isinstance(first, dict) else str(first)
+                if not name:
+                    name = src.get("entity_name", "")
 
                 if cik and name:
                     ciks[cik] = name
