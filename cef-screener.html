@@ -308,18 +308,18 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
   const email    = document.getElementById("login-email").value.trim();
   const password = document.getElementById("login-password").value;
   const errEl    = document.getElementById("auth-error");
-  errEl.textContent = "";
+  errEl.style.color = "#ef4444";
+  errEl.textContent = "Signing in…";
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) { errEl.textContent = error.message; return; }
-
-  const ok = await isSubscribed(data.user.id);
-  if (!ok) {
-    await supabase.auth.signOut();
-    errEl.textContent = "No active subscription found.";
-    return;
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { errEl.textContent = "Error: " + error.message; return; }
+    errEl.style.color = "#22c55e";
+    errEl.textContent = "Logged in! Loading…";
+    showApp();
+  } catch(err) {
+    errEl.textContent = "Unexpected error: " + err.message;
   }
-  showApp();
 });
 
 document.getElementById("signout-btn").addEventListener("click", async () => {
