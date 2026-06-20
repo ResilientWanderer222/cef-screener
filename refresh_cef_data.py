@@ -140,6 +140,8 @@ def get_tickers_for_cik(cik: str) -> list[tuple[str, str]]:
 
     results = []
     for t, ex in zip(tickers, exchanges):
+        if not ex or not t:
+            continue
         ex_norm = ex.strip().upper()
         if ex_norm in VALID_EXCHANGES or "NYSE" in ex_norm or "AMEX" in ex_norm:
             results.append((t.upper(), ex_norm))
