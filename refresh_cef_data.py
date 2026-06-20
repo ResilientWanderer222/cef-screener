@@ -46,56 +46,69 @@ YFINANCE_SLEEP = 0.3
 def fetch_n2_ciks() -> dict[str, str]:
     """
     Return {cik: company_name} for companies that filed Form N-2 recently.
-    N-2 is filed exclusively by closed-end management investment companies.
-    Uses a 4-year window to stay under EDGAR's 10k result cap.
+    Searches one year at a time to stay under EDGAR's pagination limit.
     """
     print("Fetching CEF universe from EDGAR (Form N-2 filers)…")
     ciks: dict[str, str] = {}
-    start = 0
-    page_size = 100
-    # 4-year window keeps total hits well under 3200 (EDGAR 500s above that)
-    startdt = (datetime.now() - timedelta(days=4 * 365)).strftime("%Y-%m-%d")
-    enddt   = datetime.now().strftime("%Y-%m-%d")
+    _debug_printed = False
 
-    while True:
-        params = {
-            "q": "",
-            "forms": "N-2",
-            "dateRange": "custom",
-            "startdt": startdt,
-            "enddt": enddt,
-            "from": start,
-            "size": page_size,
-        }
-        try:
-            resp = requests.get(EDGAR_SEARCH_URL, params=params,
-                                headers=EDGAR_HEADERS, timeout=20)
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            print(f"  EDGAR search error at offset {start}: {e} — using {len(ciks)} collected so far")
-            break
+    current_year = datetime.now().year
+    for year in range(current_year - 3, current_year + 1):
+        start_d = f"{year}-01-01"
+        end_d   = f"{year}-12-31" if year < current_year else datetime.now().strftime("%Y-%m-%d")
+        start   = 0
+        page_size = 100
 
-        hits = data.get("hits", {}).get("hits", [])
-        if not hits:
-            break
+        while True:
+            params = {
+                "q": "", "forms": "N-2",
+                "dateRange": "custom",
+                "startdt": start_d, "enddt": end_d,
+                "from": start, "size": page_size,
+            }
+            try:
+                resp = requests.get(EDGAR_SEARCH_URL, params=params,
+                                    headers=EDGAR_HEADERS, timeout=20)
+                resp.raise_for_status()
+                data = resp.json()
+            except Exception as e:
+                print(f"  EDGAR error {year} offset {start}: {e}")
+                break
 
-        for hit in hits:
-            # _id is the accession number: "XXXXXXXXXX-YY-ZZZZZZ"
-            # The first segment (10 digits) is the filer's CIK.
-            raw_id = hit.get("_id", "")
-            cik = raw_id.split("-")[0].lstrip("0")
-            src  = hit.get("_source", {})
-            name = src.get("entity_name", "")
-            if cik and name:
-                ciks[cik] = name
+            hits = data.get("hits", {}).get("hits", [])
+            if not hits:
+                break
 
-        total = data.get("hits", {}).get("total", {}).get("value", 0)
-        start += page_size
-        if start >= total:
-            break
+            # Print the first hit's raw structure once so we can verify parsing
+            if not _debug_printed and hits:
+                print(f"  DEBUG first hit _id={hits[0].get('_id')} source_keys={list(hits[0].get('_source', {}).keys())}")
+                _debug_printed = True
 
-        time.sleep(EDGAR_SLEEP)
+            for hit in hits:
+                src  = hit.get("_source", {})
+                name = src.get("entity_name", "")
+
+                # Try _source fields first, then parse accession number
+                cik = ""
+                for field in ("entity_id", "cik", "ciks"):
+                    val = src.get(field)
+                    if val:
+                        cik = str(val[0] if isinstance(val, list) else val).lstrip("0")
+                        break
+                if not cik:
+                    raw_id = hit.get("_id", "")
+                    cik = raw_id.split("-")[0].lstrip("0")
+
+                if cik and name:
+                    ciks[cik] = name
+
+            total = data.get("hits", {}).get("total", {}).get("value", 0)
+            start += page_size
+            if start >= total:
+                break
+            time.sleep(EDGAR_SLEEP)
+
+        print(f"  {year}: {len(ciks)} unique CIKs so far")
 
         time.sleep(EDGAR_SLEEP)
 
