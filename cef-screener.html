@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CEF Income Screener</title>
+
+<!-- ── Supabase loaded async so a CDN miss never blocks page render ── -->
+<script>
+(function() {
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+  s.onload  = () => { window.__supabaseReady = true; };
+  s.onerror = () => { window.__supabaseReady = false; };
+  document.head.appendChild(s);
+})();
+</script>
+
+<style>
+/* ── Reset & Tokens ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:        #0f1117;
+  --surface:   #1a1d27;
+  --surface2:  #22263a;
+  --border:    #2d3150;
+  --text:      #e2e8f0;
+  --muted:     #8892aa;
+  --accent:    #6c8fff;
+  --green:     #22c55e;
+  --yellow:    #facc15;
+  --red:       #ef4444;
+  --radius:    8px;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+body { background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* ── Auth Gate ──────────────────────────────────────────────────────────── */
+#auth-gate {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; flex-direction: column; gap: 16px;
+}
+#auth-gate h1 { font-size: 1.5rem; }
+#auth-gate p  { color: var(--muted); font-size: 0.9rem; }
+.auth-form { display: flex; flex-direction: column; gap: 10px; width: 320px; }
+.auth-form input {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 14px; border-radius: var(--radius);
+  font-size: 0.95rem; outline: none;
+}
+.auth-form input:focus { border-color: var(--accent); }
+.btn {
+  padding: 10px 18px; border-radius: var(--radius); border: none;
+  cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: opacity .15s;
+}
+.btn:hover { opacity: 0.88; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-ghost   { background: var(--surface2); color: var(--text); }
+#auth-error  { color: var(--red); font-size: 0.85rem; min-height: 1.1em; }
+
+/* ── App Shell ──────────────────────────────────────────────────────────── */
+#app { display: none; flex-direction: column; min-height: 100vh; }
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+header {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 14px 24px; display: flex; align-items: center;
+  justify-content: space-between; gap: 16px; flex-wrap: wrap;
+}
+.logo { font-weight: 700; font-size: 1.1rem; letter-spacing: -.3px; }
+.logo span { color: var(--accent); }
+.header-right { display: flex; align-items: center; gap: 12px; }
+#last-updated { color: var(--muted); font-size: 0.8rem; }
+#signout-btn  { font-size: 0.82rem; padding: 6px 12px; }
+
+/* ── Stats Bar ───────────────────────────────────────────────────────────── */
+#stats-bar {
+  display: flex; gap: 12px; padding: 12px 24px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 18px; min-width: 140px;
+}
+.stat-card .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.stat-card .value { font-size: 1.35rem; font-weight: 700; margin-top: 2px; }
+.stat-card .value.green { color: var(--green); }
+
+/* ── Filters ─────────────────────────────────────────────────────────────── */
+#filter-bar {
+  display: flex; gap: 10px; padding: 14px 24px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); align-items: flex-end;
+}
+.filter-group { display: flex; flex-direction: column; gap: 4px; }
+.filter-group label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.filter-group input,
+.filter-group select {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: 7px 10px; border-radius: var(--radius);
+  font-size: 0.85rem; outline: none; min-width: 120px;
+}
+.filter-group input:focus,
+.filter-group select:focus { border-color: var(--accent); }
+#search-input { min-width: 200px; }
+#clear-btn { margin-bottom: 0; align-self: flex-end; }
+
+/* ── Table Wrapper ───────────────────────────────────────────────────────── */
+#table-wrap {
+  flex: 1; overflow: auto; padding: 0 0 40px;
+}
+table {
+  width: 100%; border-collapse: collapse; font-size: 0.82rem;
+  min-width: 1100px;
+}
+thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface); border-bottom: 2px solid var(--border);
+  padding: 10px 12px; text-align: left; white-space: nowrap;
+  color: var(--muted); font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: .4px; cursor: pointer; user-select: none;
+}
+thead th.dragging { opacity: .5; }
+thead th.drag-over { border-left: 2px solid var(--accent); }
+thead th:hover { color: var(--text); }
+thead th .sort-icon { margin-left: 4px; opacity: 0.5; }
+thead th.sorted-asc  .sort-icon::after { content: " ▲"; opacity: 1; }
+thead th.sorted-desc .sort-icon::after { content: " ▼"; opacity: 1; }
+tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+tbody tr:hover { background: var(--surface2); }
+tbody td { padding: 9px 12px; vertical-align: middle; white-space: nowrap; }
+
+/* ── Column-specific ─────────────────────────────────────────────────────── */
+.col-ticker a {
+  color: var(--accent); text-decoration: none; font-weight: 600; font-size: 0.88rem;
+}
+.col-ticker a:hover { text-decoration: underline; }
+.col-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+
+.range-bar-wrap {
+  position: relative; width: 90px; height: 6px;
+  background: var(--border); border-radius: 3px; overflow: visible;
+}
+.range-bar-fill {
+  position: absolute; height: 6px; background: var(--surface2);
+  border-radius: 3px;
+  top: 0; left: 0; right: 0;
+}
+.range-bar-marker {
+  position: absolute; width: 8px; height: 10px;
+  background: var(--accent); border-radius: 2px;
+  top: -2px; transform: translateX(-4px);
+}
+.range-labels {
+  display: flex; justify-content: space-between; font-size: 0.68rem;
+  color: var(--muted); margin-top: 3px; width: 90px;
+}
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 12px;
+  font-size: 0.72rem; font-weight: 600; letter-spacing: .3px;
+}
+.badge-income  { background: rgba(34,197,94,.15);  color: var(--green); }
+.badge-managed { background: rgba(250,204,21,.15); color: var(--yellow); }
+.badge-monthly { background: rgba(108,143,255,.12); color: var(--accent); }
+.badge-quarterly { background: rgba(108,143,255,.08); color: #aab4d4; }
+
+.col-rate  { font-weight: 700; color: var(--green); }
+.col-price { font-weight: 600; }
+
+/* ── Star Rating ─────────────────────────────────────────────────────────── */
+.stars { display: flex; gap: 1px; cursor: pointer; }
+.stars span { font-size: 1rem; color: var(--border); transition: color .1s; }
+.stars span.lit { color: var(--yellow); }
+.stars:hover span { color: var(--yellow); }
+.stars:hover span ~ span { color: var(--border); }
+
+/* ── Empty State ─────────────────────────────────────────────────────────── */
+#empty-row td {
+  text-align: center; color: var(--muted); padding: 60px;
+  font-size: 0.95rem;
+}
+
+/* ── Loading ─────────────────────────────────────────────────────────────── */
+#loading {
+  text-align: center; color: var(--muted); padding: 80px;
+  font-size: 0.95rem;
+}
+</style>
+</head>
+<body>
+
+<!-- ─────────────── AUTH GATE ─────────────────────────────────────────── -->
+<div id="auth-gate">
+  <h1>CEF Income Screener</h1>
+  <p>Sign in with your subscriber account</p>
+  <form class="auth-form" id="login-form">
+    <input type="email"    id="login-email"    placeholder="Email"    required>
+    <input type="password" id="login-password" placeholder="Password" required>
+    <button type="submit" class="btn btn-primary">Sign In</button>
+    <div id="auth-error"></div>
+  </form>
+</div>
+
+<!-- ─────────────── MAIN APP ──────────────────────────────────────────── -->
+<div id="app">
+
+  <header>
+    <span class="logo">CEF <span>Income</span> Screener</span>
+    <div class="header-right">
+      <span id="last-updated"></span>
+      <button class="btn btn-ghost" id="signout-btn">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- Stats Bar -->
+  <div id="stats-bar">
+    <div class="stat-card">
+      <div class="label">Total Funds</div>
+      <div class="value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Avg Rate</div>
+      <div class="value green" id="stat-avg-rate">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Income Only</div>
+      <div class="value" id="stat-income">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Managed Dist</div>
+      <div class="value" id="stat-managed">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Monthly Payers</div>
+      <div class="value" id="stat-monthly">—</div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div id="filter-bar">
+    <div class="filter-group">
+      <label>Search</label>
+      <input type="text" id="search-input" placeholder="Ticker or fund name…">
+    </div>
+    <div class="filter-group">
+      <label>Min Rate %</label>
+      <input type="number" id="f-min-rate" min="0" max="50" step="0.5" placeholder="e.g. 5">
+    </div>
+    <div class="filter-group">
+      <label>Min Age (yrs)</label>
+      <input type="number" id="f-min-age" min="0" max="50" step="1" placeholder="e.g. 3">
+    </div>
+    <div class="filter-group">
+      <label>Min Holdings</label>
+      <input type="number" id="f-min-holdings" min="0" step="10" placeholder="e.g. 50">
+    </div>
+    <div class="filter-group">
+      <label>Dist Type</label>
+      <select id="f-dist-type">
+        <option value="">All</option>
+        <option value="Income">Income Only</option>
+        <option value="Managed">Managed</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Frequency</label>
+      <select id="f-frequency">
+        <option value="">All</option>
+        <option value="Monthly">Monthly</option>
+        <option value="Quarterly">Quarterly</option>
+      </select>
+    </div>
+    <button class="btn btn-ghost" id="clear-btn">Clear</button>
+  </div>
+
+  <!-- Table -->
+  <div id="table-wrap">
+    <div id="loading">Loading fund data…</div>
+    <table id="fund-table" style="display:none">
+      <thead id="table-head">
+        <tr id="header-row"></tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+//  CONFIG  ←  FILL THESE IN
+// ══════════════════════════════════════════════════════════════════════════
+const SUPABASE_URL  = "YOUR_SUPABASE_URL_HERE";
+const SUPABASE_ANON = "YOUR_SUPABASE_ANON_KEY_HERE";
+const DATA_URL      = "./data.json";   // relative to this HTML file in GitHub Pages
+
+// Set to false to bypass auth while Supabase credentials aren't wired up yet.
+const AUTH_ENABLED = SUPABASE_URL !== "YOUR_SUPABASE_URL_HERE";
+
+// ══════════════════════════════════════════════════════════════════════════
+//  SUPABASE AUTH
+// ══════════════════════════════════════════════════════════════════════════
+const supabase = AUTH_ENABLED
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON)
+  : null;
+
+async function isSubscribed(userId) {
+  if (!supabase) return true;
+  const { data } = await supabase
+    .from("subscriptions")
+    .select("status, expires_at")
+    .eq("user_id", userId)
+    .single();
+  if (!data) return false;
+  if (data.status !== "active") return false;
+  if (data.expires_at && new Date(data.expires_at) < new Date()) return false;
+  return true;
+}
+
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!AUTH_ENABLED) { showApp(); return; }
+  const email    = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  const errEl    = document.getElementById("auth-error");
+  errEl.textContent = "";
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) { errEl.textContent = error.message; return; }
+
+  const ok = await isSubscribed(data.user.id);
+  if (!ok) {
+    await supabase.auth.signOut();
+    errEl.textContent = "No active subscription found.";
+    return;
+  }
+  showApp();
+});
+
+document.getElementById("signout-btn").addEventListener("click", async () => {
+  if (supabase) await supabase.auth.signOut();
+  document.getElementById("auth-gate").style.display = "flex";
+  document.getElementById("app").style.display = "none";
+});
+
+async function checkSession() {
+  if (!AUTH_ENABLED) { showApp(); return; }
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const ok = await isSubscribed(session.user.id);
+  if (!ok) { await supabase.auth.signOut(); return; }
+  showApp();
+}
+
+function showApp() {
+  document.getElementById("auth-gate").style.display = "none";
+  document.getElementById("app").style.display = "flex";
+  loadData();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  COLUMN DEFINITIONS  (order here = default column order)
+// ══════════════════════════════════════════════════════════════════════════
+// Each render() returns the *inner* HTML only — the build loop wraps it in <td>.
+// tdClass: optional CSS class for the <td>; tdStyle: optional inline style string.
+const COLUMNS = [
+  { key: "ticker",         label: "Ticker",        sortable: true,  render: renderTicker },
+  { key: "name",           label: "Fund Name",      sortable: true,  render: renderName,    tdClass: "col-name" },
+  { key: "inception_date", label: "Inception",      sortable: true,  render: renderInception },
+  { key: "age_years",      label: "Age (yrs)",      sortable: true,  render: v => v != null ? v.toFixed(1) : "—" },
+  { key: "price",          label: "Price",          sortable: true,  render: v => v != null ? `$${v.toFixed(2)}` : "—", tdClass: "col-price" },
+  { key: "_52w",           label: "52-Week Range",  sortable: false, render: render52W },
+  { key: "dist_type",      label: "Dist Type",      sortable: true,  render: renderDistType },
+  { key: "dist_rate",      label: "Rate %",         sortable: true,  render: v => v != null ? `${v.toFixed(2)}%` : "—", tdClass: "col-rate" },
+  { key: "dist_amount",    label: "Amount",         sortable: true,  render: v => v != null ? `$${v.toFixed(4)}` : "—" },
+  { key: "frequency",      label: "Frequency",      sortable: true,  render: renderFrequency },
+  { key: "ex_date",        label: "Ex-Date",        sortable: true,  render: v => v || "—" },
+  { key: "pay_date",       label: "Pay Date",       sortable: true,  render: v => v || "—" },
+  { key: "holdings_count", label: "Holdings",       sortable: true,  render: v => v != null ? v.toLocaleString() : "—" },
+  { key: "_rating",        label: "My Rating",      sortable: true,  render: renderRating },
+];
+
+// ══════════════════════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════════════════════
+let allFunds = [];
+let sortKey  = "dist_rate";
+let sortDir  = -1;          // -1 = desc
+let colOrder = COLUMNS.map((_, i) => i);  // indices into COLUMNS
+let dragSrc  = null;
+
+// My Ratings: { ticker: 1-5 }  persisted to localStorage
+function loadRatings()  { try { return JSON.parse(localStorage.getItem("cef_ratings") || "{}"); } catch { return {}; } }
+function saveRatings(r) { localStorage.setItem("cef_ratings", JSON.stringify(r)); }
+let myRatings = loadRatings();
+
+// ══════════════════════════════════════════════════════════════════════════
+//  DATA LOADING
+// ══════════════════════════════════════════════════════════════════════════
+async function loadData() {
+  document.getElementById("loading").style.display = "block";
+  document.getElementById("fund-table").style.display = "none";
+
+  try {
+    const res  = await fetch(DATA_URL + "?t=" + Date.now());
+    const json = await res.json();
+    allFunds = json.funds || [];
+
+    const updated = json.updated ? new Date(json.updated).toLocaleString() : "";
+    document.getElementById("last-updated").textContent = updated ? `Updated ${updated}` : "";
+  } catch (err) {
+    document.getElementById("loading").textContent = "Failed to load data.json — " + err.message;
+    return;
+  }
+
+  document.getElementById("loading").style.display = "none";
+  document.getElementById("fund-table").style.display = "table";
+
+  buildHeader();
+  applyFilters();
+  wireFilters();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  CELL RENDERERS
+// ══════════════════════════════════════════════════════════════════════════
+// All render() functions return inner HTML only — <td> wrapping happens in renderTable().
+function renderTicker(v) {
+  return `<a href="https://finance.yahoo.com/quote/${v}" target="_blank" rel="noopener">${v}</a>`;
+}
+function renderName(v) {
+  return `<span title="${escHtml(v || '')}">${escHtml(v || "—")}</span>`;
+}
+function renderInception(v, row) {
+  const age = row.age_years != null ? ` <span style="color:var(--muted)">(${row.age_years.toFixed(1)}y)</span>` : "";
+  return `${v ? v : "—"}${age}`;
+}
+function render52W(_, row) {
+  const lo = row.week52_low, hi = row.week52_high, cur = row.price;
+  if (lo == null || hi == null || cur == null || hi === lo) {
+    return `<span style="color:var(--muted)">—</span>`;
+  }
+  const pct = Math.max(0, Math.min(100, ((cur - lo) / (hi - lo)) * 100));
+  return `<div class="range-bar-wrap">
+      <div class="range-bar-fill"></div>
+      <div class="range-bar-marker" style="left:${pct}%"></div>
+    </div>
+    <div class="range-labels">
+      <span>$${lo.toFixed(2)}</span><span>$${hi.toFixed(2)}</span>
+    </div>`;
+}
+function renderDistType(v) {
+  const cls = v === "Managed" ? "badge-managed" : "badge-income";
+  return `<span class="badge ${cls}">${v || "—"}</span>`;
+}
+function renderFrequency(v) {
+  if (!v || v === "Unknown") return `<span style="color:var(--muted)">—</span>`;
+  const cls = v === "Monthly" ? "badge-monthly" : "badge-quarterly";
+  return `<span class="badge ${cls}">${v}</span>`;
+}
+function renderRating(_, row) {
+  const r = myRatings[row.ticker] || 0;
+  let stars = "";
+  for (let i = 1; i <= 5; i++) {
+    stars += `<span class="${i <= r ? "lit" : ""}" data-star="${i}">${i <= r ? "★" : "☆"}</span>`;
+  }
+  return `<div class="stars" data-ticker="${row.ticker}">${stars}</div>`;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  TABLE BUILD
+// ══════════════════════════════════════════════════════════════════════════
+function buildHeader() {
+  const tr = document.getElementById("header-row");
+  tr.innerHTML = "";
+  colOrder.forEach((colIdx, pos) => {
+    const col = COLUMNS[colIdx];
+    const th  = document.createElement("th");
+    th.dataset.colIdx = colIdx;
+    th.dataset.pos    = pos;
+    th.setAttribute("draggable", "true");
+
+    let sortClass = "";
+    if (col.sortable && col.key === sortKey) {
+      sortClass = sortDir === 1 ? "sorted-asc" : "sorted-desc";
+    }
+    th.className = sortClass;
+    th.innerHTML = `${col.label}<span class="sort-icon"></span>`;
+
+    if (col.sortable) {
+      th.addEventListener("click", () => {
+        if (sortKey === col.key) sortDir *= -1;
+        else { sortKey = col.key; sortDir = -1; }
+        buildHeader();
+        renderTable(currentFiltered());
+      });
+    }
+
+    // Drag-to-reorder
+    th.addEventListener("dragstart", (e) => { dragSrc = pos; th.classList.add("dragging"); });
+    th.addEventListener("dragend",   ()  => { th.classList.remove("dragging"); clearDragOver(); });
+    th.addEventListener("dragover",  (e) => { e.preventDefault(); clearDragOver(); th.classList.add("drag-over"); });
+    th.addEventListener("drop",      (e) => {
+      e.preventDefault();
+      if (dragSrc === null || dragSrc === pos) return;
+      const moved = colOrder.splice(dragSrc, 1)[0];
+      colOrder.splice(pos, 0, moved);
+      buildHeader();
+      renderTable(currentFiltered());
+      dragSrc = null;
+    });
+
+    tr.appendChild(th);
+  });
+}
+
+function clearDragOver() {
+  document.querySelectorAll("thead th").forEach(t => t.classList.remove("drag-over"));
+}
+
+function renderTable(funds) {
+  const tbody = document.getElementById("table-body");
+  tbody.innerHTML = "";
+
+  updateStats(funds);
+
+  if (!funds.length) {
+    const tr = document.createElement("tr");
+    tr.id = "empty-row";
+    tr.innerHTML = `<td colspan="${colOrder.length}">No funds match the current filters.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  const sorted = [...funds].sort((a, b) => {
+    let va = getCellValue(a, sortKey);
+    let vb = getCellValue(b, sortKey);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === "string") return sortDir * va.localeCompare(vb);
+    return sortDir * (va - vb);
+  });
+
+  sorted.forEach(fund => {
+    const tr = document.createElement("tr");
+    let html = "";
+    colOrder.forEach(colIdx => {
+      const col = COLUMNS[colIdx];
+      const val = fund[col.key];
+      const inner = col.render ? col.render(val, fund) : (val != null ? val : "—");
+      const cls   = col.tdClass ? ` class="${col.tdClass}"` : (col.key === "ticker" ? ' class="col-ticker"' : "");
+      html += `<td${cls}>${inner}</td>`;
+    });
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  });
+
+  // Wire star rating clicks
+  tbody.querySelectorAll(".stars").forEach(el => {
+    el.addEventListener("click", (e) => {
+      const star = e.target.closest("[data-star]");
+      if (!star) return;
+      const ticker = el.dataset.ticker;
+      const rating = parseInt(star.dataset.star);
+      myRatings[ticker] = myRatings[ticker] === rating ? 0 : rating;
+      saveRatings(myRatings);
+      renderTable(currentFiltered());
+    });
+  });
+}
+
+function getCellValue(fund, key) {
+  if (key === "_rating") return myRatings[fund.ticker] || 0;
+  if (key === "_52w")    return fund.price;
+  return fund[key];
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  STATS BAR
+// ══════════════════════════════════════════════════════════════════════════
+function updateStats(funds) {
+  const total   = funds.length;
+  const rates   = funds.map(f => f.dist_rate).filter(r => r > 0);
+  const avg     = rates.length ? (rates.reduce((a, b) => a + b, 0) / rates.length) : 0;
+  const income  = funds.filter(f => f.dist_type === "Income").length;
+  const managed = funds.filter(f => f.dist_type === "Managed").length;
+  const monthly = funds.filter(f => f.frequency === "Monthly").length;
+
+  document.getElementById("stat-total").textContent   = total.toLocaleString();
+  document.getElementById("stat-avg-rate").textContent = avg ? avg.toFixed(2) + "%" : "—";
+  document.getElementById("stat-income").textContent  = income.toLocaleString();
+  document.getElementById("stat-managed").textContent = managed.toLocaleString();
+  document.getElementById("stat-monthly").textContent = monthly.toLocaleString();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  FILTERS
+// ══════════════════════════════════════════════════════════════════════════
+function currentFiltered() {
+  const q        = document.getElementById("search-input").value.trim().toLowerCase();
+  const minRate  = parseFloat(document.getElementById("f-min-rate").value) || 0;
+  const minAge   = parseFloat(document.getElementById("f-min-age").value) || 0;
+  const minH     = parseInt(document.getElementById("f-min-holdings").value) || 0;
+  const distType = document.getElementById("f-dist-type").value;
+  const freq     = document.getElementById("f-frequency").value;
+
+  return allFunds.filter(f => {
+    if (q && !(f.ticker?.toLowerCase().includes(q) || f.name?.toLowerCase().includes(q))) return false;
+    if (minRate && (f.dist_rate == null || f.dist_rate < minRate)) return false;
+    if (minAge  && (f.age_years == null || f.age_years < minAge))  return false;
+    if (minH    && (f.holdings_count == null || f.holdings_count < minH)) return false;
+    if (distType && f.dist_type !== distType) return false;
+    if (freq     && f.frequency !== freq)     return false;
+    return true;
+  });
+}
+
+function applyFilters() {
+  renderTable(currentFiltered());
+}
+
+function wireFilters() {
+  ["search-input", "f-min-rate", "f-min-age", "f-min-holdings",
+   "f-dist-type", "f-frequency"].forEach(id => {
+    document.getElementById(id).addEventListener("input", applyFilters);
+    document.getElementById(id).addEventListener("change", applyFilters);
+  });
+  document.getElementById("clear-btn").addEventListener("click", () => {
+    ["search-input","f-min-rate","f-min-age","f-min-holdings"].forEach(id => {
+      document.getElementById(id).value = "";
+    });
+    document.getElementById("f-dist-type").value = "";
+    document.getElementById("f-frequency").value = "";
+    applyFilters();
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  BOOT — wait up to 3 s for Supabase CDN, then proceed regardless
+// ══════════════════════════════════════════════════════════════════════════
+(function boot() {
+  if (!AUTH_ENABLED) { checkSession(); return; }
+  if (window.__supabaseReady === true)  { checkSession(); return; }
+  if (window.__supabaseReady === false) { checkSession(); return; }   // CDN failed, auth will degrade gracefully
+  // Still loading — poll
+  setTimeout(boot, 50);
+}());
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+  <key>Label</key>
+  <string>com.cef.screener</string>
+
+  <!--
+    Full path to the Python interpreter in your venv.
+    Run: which python3  (or which python)  after activating your venv
+    and paste the result below.
+  -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/python3</string>
+    <string>/Users/jjs/Playground/cef-screener/refresh_cef_data.py</string>
+  </array>
+
+  <!-- Run every day at 6:00 PM local time -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>18</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/jjs/Playground/cef-screener</string>
+
+  <!-- Logs written here — check if the script fails silently -->
+  <key>StandardOutPath</key>
+  <string>/Users/jjs/Library/Logs/cef-screener-out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/jjs/Library/Logs/cef-screener-err.log</string>
+
+  <!-- Keep alive is off — this is a one-shot daily job -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Ensures git can find credentials and PATH -->
+    <key>HOME</key>
+    <string>/Users/jjs</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+</dict>
+</plist>
