@@ -45,22 +45,25 @@ YFINANCE_SLEEP = 0.3
 
 def fetch_n2_ciks() -> dict[str, str]:
     """
-    Return {cik: company_name} for all companies that have ever filed Form N-2.
-    N-2 is the registration statement exclusively for closed-end management
-    investment companies — the cleanest legal definition of 'CEF'.
+    Return {cik: company_name} for companies that filed Form N-2 recently.
+    N-2 is filed exclusively by closed-end management investment companies.
+    Uses a 4-year window to stay under EDGAR's 10k result cap.
     """
     print("Fetching CEF universe from EDGAR (Form N-2 filers)…")
     ciks: dict[str, str] = {}
     start = 0
     page_size = 100
+    # 4-year window keeps total hits well under 3200 (EDGAR 500s above that)
+    startdt = (datetime.now() - timedelta(days=4 * 365)).strftime("%Y-%m-%d")
+    enddt   = datetime.now().strftime("%Y-%m-%d")
 
     while True:
         params = {
             "q": "",
             "forms": "N-2",
             "dateRange": "custom",
-            "startdt": "2000-01-01",
-            "enddt": datetime.now().strftime("%Y-%m-%d"),
+            "startdt": startdt,
+            "enddt": enddt,
             "from": start,
             "size": page_size,
         }
@@ -70,7 +73,7 @@ def fetch_n2_ciks() -> dict[str, str]:
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            print(f"  EDGAR search error at offset {start}: {e}")
+            print(f"  EDGAR search error at offset {start}: {e} — using {len(ciks)} collected so far")
             break
 
         hits = data.get("hits", {}).get("hits", [])
@@ -78,10 +81,11 @@ def fetch_n2_ciks() -> dict[str, str]:
             break
 
         for hit in hits:
+            # _id is the accession number: "XXXXXXXXXX-YY-ZZZZZZ"
+            # The first segment (10 digits) is the filer's CIK.
             raw_id = hit.get("_id", "")
-            # _id format: "<cik>:<accession>" or just "<cik>"
-            cik = raw_id.split(":")[0].lstrip("0")
-            src = hit.get("_source", {})
+            cik = raw_id.split("-")[0].lstrip("0")
+            src  = hit.get("_source", {})
             name = src.get("entity_name", "")
             if cik and name:
                 ciks[cik] = name
@@ -90,6 +94,8 @@ def fetch_n2_ciks() -> dict[str, str]:
         start += page_size
         if start >= total:
             break
+
+        time.sleep(EDGAR_SLEEP)
 
         time.sleep(EDGAR_SLEEP)
 
