@@ -5,16 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CEF Income Screener</title>
 
-<!-- ── Supabase loaded async so a CDN miss never blocks page render ── -->
-<script>
-(function() {
-  const s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-  s.onload  = () => { window.__supabaseReady = true; };
-  s.onerror = () => { window.__supabaseReady = false; };
-  document.head.appendChild(s);
-})();
-</script>
+<!-- ── Supabase ── -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
 /* ── Reset & Tokens ─────────────────────────────────────────────────────── */
