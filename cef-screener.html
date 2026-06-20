@@ -305,15 +305,8 @@ const supabase = AUTH_ENABLED
   : null;
 
 async function isSubscribed(userId) {
-  if (!supabase) return true;
-  const { data } = await supabase
-    .from("subscriptions")
-    .select("status, expires_at")
-    .eq("user_id", userId)
-    .single();
-  if (!data) return false;
-  if (data.status !== "active") return false;
-  if (data.expires_at && new Date(data.expires_at) < new Date()) return false;
+  // Subscription check disabled until subscriptions table is set up.
+  // Any valid Supabase login grants access for now.
   return true;
 }
 
